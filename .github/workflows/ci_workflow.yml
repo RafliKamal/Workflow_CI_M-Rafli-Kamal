@@ -1,0 +1,70 @@
+name: CI Workflow & Docker Build
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  train-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Checkout Code
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    # 2. Setup Python
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    # 3. Install Dependencies
+    - name: Install Dependencies
+      run: |
+        pip install mlflow dagshub pandas numpy scikit-learn matplotlib seaborn
+
+    # 4. Login ke DagsHub (Untuk tracking)
+    - name: DagsHub Login
+      env:
+        DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }} 
+      run: |
+        # Set kredensial via env vars atau command line jika diperlukan
+        # Karena kita pakai dagshub.init() di script, ini optional tapi good practice
+        echo "DagsHub setup complete"
+
+    # 5. Jalankan Training (MLflow Project)
+    - name: Run MLflow Project
+      working-directory: ./MLProject
+      run: python modelling.py
+
+    # 6. Login ke Docker Hub
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    # 7. Build & Push Docker Image dari Model MLflow
+    - name: Build and Push Docker Image
+      env:
+        MLFLOW_TRACKING_URI: "https://dagshub.com/raflikamal/SMSML_M-Rafli-Kamal.mlflow"
+        MLFLOW_TRACKING_USERNAME: "raflikamal"
+        MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }} # Tambahkan secret ini di GitHub
+      run: |
+        # Ambil Run ID terakhir dari eksperimen
+        RUN_ID=$(mlflow runs list --experiment-id 0 --max-results 1 --output json | jq -r '.[0].run_id')
+        
+        echo "Building Docker image for Run ID: $RUN_ID"
+        
+        # Build Docker Image menggunakan MLflow
+        mlflow models build-docker \
+          --model-uri "runs:/$RUN_ID/random_forest_model" \
+          --name "${{ secrets.DOCKER_USERNAME }}/loan-approval-model:latest"
+
+        # Push ke Docker Hub
+        docker push "${{ secrets.DOCKER_USERNAME }}/loan-approval-model:latest"
