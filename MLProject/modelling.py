@@ -10,14 +10,15 @@ import seaborn as sns
 import os
 import json
 
+# --- FUNGSI PELATIHAN & LOGGING ---
 def train_and_log_model():
-    print("Memulai proses training (Lokal)...")
+    print("Memulai proses training...")
     
     # 1. Load Data
     try:
         df = pd.read_csv("loan_data_cleaned_automated.csv")
     except FileNotFoundError:
-        print("Error: File dataset tidak ditemukan.")
+        print("Error: File dataset 'loan_data_cleaned_automated.csv' tidak ditemukan di folder ini.")
         return
 
     # 2. Split Data
@@ -25,12 +26,13 @@ def train_and_log_model():
     y = df['loan_status']
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # 3. Setup MLflow 
-    mlflow.set_experiment("Loan_Approval_Local_CI")
+    # 3. Setup MLflow Experiment (LOKAL)
+    experiment_name = "Loan_Approval_Local_CI"
+    mlflow.set_experiment(experiment_name)
 
     with mlflow.start_run(run_name="RandomForest_CI_Run") as run:
         
-        # --- HYPERPARAMETERS ---
+        # --- HYPERPARAMETERS & GRID SEARCH ---
         param_grid = {
             'n_estimators': [50, 100],
             'max_depth': [10, 20]
@@ -40,38 +42,108 @@ def train_and_log_model():
         grid_search = GridSearchCV(estimator=rf, param_grid=param_grid, cv=3, scoring='accuracy', n_jobs=-1)
         grid_search.fit(X_train, y_train)
         
+        # Ambil model dan parameter terbaik
         best_model = grid_search.best_estimator_
         best_params = grid_search.best_params_
         
-        # Log Params
+        # Log Best Parameters
         for param, value in best_params.items():
             mlflow.log_param(param, value)
+            
+        # Simpan hasil Grid Search ke CSV & Log Artifact
+        results_df = pd.DataFrame(grid_search.cv_results_)
+        results_df.to_csv("grid_search_results.csv", index=False)
+        mlflow.log_artifact("grid_search_results.csv")
 
-        # --- METRICS & PREDICT ---
-        y_pred = best_model.predict(X_test)
-        
-        acc = accuracy_score(y_test, y_pred)
-        prec = precision_score(y_test, y_pred, average='binary')
-        rec = recall_score(y_test, y_pred, average='binary')
-        f1 = f1_score(y_test, y_pred, average='binary')
-        
-        mlflow.log_metrics({"accuracy": acc, "precision": prec, "recall": rec, "f1_score": f1})
-        
-        # --- ARTIFACTS ---
+        # Simpan Best Parameters ke JSON & Log Artifact
         with open("best_parameters.json", "w") as f:
             json.dump(best_params, f)
         mlflow.log_artifact("best_parameters.json")
 
+        # --- PREDIKSI & METRIK ---
+        y_pred = best_model.predict(X_test)
+        
+        acc = accuracy_score(y_test, y_pred)
+        prec = precision_score(y_test, y_pred, average='binary') 
+        rec = recall_score(y_test, y_pred, average='binary')     
+        f1 = f1_score(y_test, y_pred, average='binary')         
+        
+        print(f"Accuracy: {acc}")
+        print(f"Precision: {prec}")
+        print(f"Recall: {rec}")
+        print(f"F1-Score: {f1}")
+
+        # Log Metrics
+        metrics = {
+            "accuracy": acc,
+            "precision": prec,
+            "recall": rec,
+            "f1_score": f1
+        }
+        mlflow.log_metrics(metrics)
+        
+        # Simpan Metrics Summary ke JSON & Log Artifact
+        with open("metrics_summary.json", "w") as f:
+            json.dump(metrics, f)
+        mlflow.log_artifact("metrics_summary.json")
+
+        # Simpan Prediksi ke CSV & Log Artifact
+        predictions_df = X_test.copy()
+        predictions_df['Actual'] = y_test
+        predictions_df['Predicted'] = y_pred
+        predictions_df.to_csv("predictions.csv", index=False)
+        mlflow.log_artifact("predictions.csv")
+        
+        # --- ARTEFAK GAMBAR (Syarat Advance) ---
+        
+        # 1. Confusion Matrix Plot
+        plt.figure(figsize=(8, 6))
+        cm = confusion_matrix(y_test, y_pred)
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+        plt.title('Confusion Matrix')
+        plt.ylabel('Actual')
+        plt.xlabel('Predicted')
+        plt.tight_layout()
+        plt.savefig("confusion_matrix.png")
+        plt.close()
+        mlflow.log_artifact("confusion_matrix.png")
+        
+        # 2. Feature Importance Plot & CSV
+        if hasattr(best_model, 'feature_importances_'):
+            feature_importances = pd.Series(best_model.feature_importances_, index=X.columns)
+            
+            # Simpan plot
+            plt.figure(figsize=(10, 6))
+            feature_importances.nlargest(10).plot(kind='barh')
+            plt.title('Top 10 Feature Importances')
+            plt.tight_layout()
+            plt.savefig("feature_importance.png")
+            plt.close()
+            mlflow.log_artifact("feature_importance.png")
+            
+            # Simpan data ke CSV
+            feature_importances.sort_values(ascending=False).to_csv("feature_importance.csv")
+            mlflow.log_artifact("feature_importance.csv")
+        
         # --- LOG MODEL ---
         mlflow.sklearn.log_model(best_model, "random_forest_model")
         
-        # --- SIMPAN RUN ID ---
+        # --- SIMPAN RUN ID (PENTING UNTUK CI/CD) ---
         run_id = run.info.run_id
         print(f"Saving Run ID: {run_id}")
         with open("run_id.txt", "w") as f:
             f.write(run_id)
-
-        print("Training selesai. Artefak tersimpan di folder ./mlruns lokal.")
+        
+        print("Training selesai. Metrik dan artefak tersimpan di folder ./mlruns lokal.")
+        
+        # Bersihkan file lokal sementara agar tidak mengotori repo
+        temp_files = [
+            "confusion_matrix.png", "feature_importance.png", "grid_search_results.csv", 
+            "best_parameters.json", "metrics_summary.json", "predictions.csv", "feature_importance.csv"
+        ]
+        for file in temp_files:
+            if os.path.exists(file):
+                os.remove(file)
 
 if __name__ == "__main__":
     train_and_log_model()
