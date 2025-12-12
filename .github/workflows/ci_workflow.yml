@@ -29,13 +29,23 @@ jobs:
         pip install mlflow dagshub pandas numpy scikit-learn matplotlib seaborn
 
     # 4. Run Training & Logging to DagsHub
+    # PENTING: Script ini akan membuat file run_id.txt
     - name: Run MLflow Project (Training)
       working-directory: ./MLProject
       env:
         MLFLOW_TRACKING_URI: "https://dagshub.com/raflikamal/SMSML_M-Rafli-Kamal.mlflow"
         MLFLOW_TRACKING_USERNAME: "raflikamal"
         MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }} 
-      run: python modelling.py
+      run: |
+        python modelling.py
+        # Pindahkan run_id.txt dari folder MLProject ke root folder agar mudah dibaca step selanjutnya
+        if [ -f "run_id.txt" ]; then
+          mv run_id.txt ../run_id.txt
+          echo "Berhasil memindahkan run_id.txt ke root."
+        else
+          echo "WARNING: run_id.txt tidak ditemukan setelah training!"
+          exit 1
+        fi
 
     # 5. Login ke Docker Hub
     - name: Login to Docker Hub
@@ -44,33 +54,29 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    # 6. Build & Push Docker Image (Metode Python Helper)
+    # 6. Build & Push Docker Image
     - name: Build and Push Docker Image
       env:
         MLFLOW_TRACKING_URI: "https://dagshub.com/raflikamal/SMSML_M-Rafli-Kamal.mlflow"
         MLFLOW_TRACKING_USERNAME: "raflikamal"
         MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
       run: |
-        echo "Menjalankan script helper untuk mendapatkan Run ID..."
-        
-        # Jalankan script helper
-        python get_run_id.py
-        
-        # Baca Run ID dari file yang dibuat script python
+        # Cek apakah file ID ada
         if [ -f "run_id.txt" ]; then
           RUN_ID=$(cat run_id.txt)
-          echo "Run ID ditemukan: $RUN_ID"
+          echo "Run ID ditemukan dari training: $RUN_ID"
         else
-          echo "Gagal: File run_id.txt tidak ditemukan. Cek log output script python di atas."
+          echo "Error: File run_id.txt tidak ditemukan. Training mungkin gagal menyimpan ID."
           exit 1
         fi
         
-        # Nama Image
+        # Nama Image Docker
         IMAGE_NAME="${{ secrets.DOCKER_USERNAME }}/loan-approval-model:latest"
         
         echo "Building Docker image: $IMAGE_NAME using runs:/$RUN_ID/random_forest_model"
         
-        # Build Docker
+        # Build Docker Image menggunakan MLflow
+        # --enable-mlserver disarankan untuk production, tapi opsional jika hanya untuk tugas
         mlflow models build-docker \
           --model-uri "runs:/$RUN_ID/random_forest_model" \
           --name "$IMAGE_NAME" \

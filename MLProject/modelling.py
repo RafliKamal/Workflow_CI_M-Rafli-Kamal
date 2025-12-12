@@ -146,6 +146,15 @@ def train_and_log_model():
                      "best_parameters.json", "metrics_summary.json", "predictions.csv", "feature_importance.csv"]:
             if os.path.exists(file):
                 os.remove(file)
+        
+
+        # Simpan Run ID
+        run_id = mlflow.active_run().info.run_id
+        print(f"Saving Run ID: {run_id}")
+        with open("run_id.txt", "w") as f:
+            f.write(run_id)
+
+                
 
 if __name__ == "__main__":
     train_and_log_model()
