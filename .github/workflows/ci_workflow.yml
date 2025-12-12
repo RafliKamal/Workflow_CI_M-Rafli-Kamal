@@ -54,7 +54,7 @@ jobs:
       env:
         MLFLOW_TRACKING_URI: "https://dagshub.com/raflikamal/SMSML_M-Rafli-Kamal.mlflow"
         MLFLOW_TRACKING_USERNAME: "raflikamal"
-        MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }} # Tambahkan secret ini di GitHub
+        MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }} 
       run: |
         # Ambil Run ID terakhir dari eksperimen
         RUN_ID=$(mlflow runs list --experiment-id 0 --max-results 1 --output json | jq -r '.[0].run_id')
