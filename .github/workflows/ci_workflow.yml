@@ -28,43 +28,53 @@ jobs:
       run: |
         pip install mlflow dagshub pandas numpy scikit-learn matplotlib seaborn
 
-    # 4. Login ke DagsHub (Untuk tracking)
-    - name: DagsHub Login
-      env:
-        DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }} 
-      run: |
-        # Set kredensial via env vars atau command line jika diperlukan
-        # Karena kita pakai dagshub.init() di script, ini optional tapi good practice
-        echo "DagsHub setup complete"
-
-    # 5. Jalankan Training (MLflow Project)
-    - name: Run MLflow Project
+    # 4. Set Environment Variables untuk DagsHub
+    - name: Run MLflow Project (Training)
       working-directory: ./MLProject
+      env:
+        MLFLOW_TRACKING_URI: "https://dagshub.com/raflikamal/SMSML_M-Rafli-Kamal.mlflow"
+        MLFLOW_TRACKING_USERNAME: "raflikamal"
+        MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
       run: python modelling.py
 
-    # 6. Login ke Docker Hub
+    # 5. Login ke Docker Hub
     - name: Login to Docker Hub
       uses: docker/login-action@v2
       with:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    # 7. Build & Push Docker Image dari Model MLflow
+    # 6. Build & Push Docker Image (Metode Lebih Aman)
     - name: Build and Push Docker Image
       env:
         MLFLOW_TRACKING_URI: "https://dagshub.com/raflikamal/SMSML_M-Rafli-Kamal.mlflow"
         MLFLOW_TRACKING_USERNAME: "raflikamal"
-        MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }} 
+        MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
       run: |
-        # Ambil Run ID terakhir dari eksperimen
+        # Install jq untuk parsing (jika belum ada di runner, biasanya sudah ada)
+        sudo apt-get install jq
+        
+        # Ambil Run ID terbaru secara eksplisit
+        # Kita ambil run_id dari eksperimen terakhir yang sukses
         RUN_ID=$(mlflow runs list --experiment-id 0 --max-results 1 --output json | jq -r '.[0].run_id')
         
-        echo "Building Docker image for Run ID: $RUN_ID"
+        if [ -z "$RUN_ID" ] || [ "$RUN_ID" == "null" ]; then
+          echo "Error: Tidak dapat menemukan Run ID. Pastikan training berhasil."
+          exit 1
+        fi
         
-        # Build Docker Image menggunakan MLflow
+        echo "Found Run ID: $RUN_ID"
+        
+        # Build Docker Image
+        # Perhatikan format nama image: username/repo:tag
+        IMAGE_NAME="${{ secrets.DOCKER_USERNAME }}/loan-approval-model:latest"
+        
+        echo "Building Docker image: $IMAGE_NAME"
+        
         mlflow models build-docker \
           --model-uri "runs:/$RUN_ID/random_forest_model" \
-          --name "${{ secrets.DOCKER_USERNAME }}/loan-approval-model:latest"
+          --name "$IMAGE_NAME"
 
         # Push ke Docker Hub
-        docker push "${{ secrets.DOCKER_USERNAME }}/loan-approval-model:latest"
+        echo "Pushing image to Docker Hub..."
+        docker push "$IMAGE_NAME"
