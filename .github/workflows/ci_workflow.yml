@@ -1,4 +1,4 @@
-name: CI Workflow & Docker Build (Local Fix)
+name: CI Workflow & Docker Build (Final Fix)
 
 on:
   push:
@@ -29,21 +29,14 @@ jobs:
       working-directory: ./MLProject
       run: |
         python modelling.py
-        # Pindahkan run_id ke root
-        if [ -f "run_id.txt" ]; then mv run_id.txt ../run_id.txt; fi
+        # Hapus bagian pindah run_id.txt karena kita pakai script pencari otomatis
 
     - name: Save Artifacts to GitHub (Commit mlruns)
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        
-        # Tambahkan folder mlruns (data model)
         git add MLProject/mlruns
-        
-        # Commit
         git commit -m "Auto-save: MLflow artifacts" || echo "No changes to commit"
-        
-        # Pull untuk sinkronisasi, lalu Push
         git pull --rebase origin main
         git push origin main
 
@@ -55,27 +48,21 @@ jobs:
 
     - name: Build and Push Docker Image
       run: |
-        if [ -f "run_id.txt" ]; then
-          RUN_ID=$(cat run_id.txt)
-          echo "Run ID: $RUN_ID"
-        else
-          echo "Error: run_id.txt not found."
+        # Jalankan script pencari model
+        # Pastikan file find_model_path.py ada di root repository Anda
+        MODEL_URI=$(python find_model_path.py)
+        
+        echo "Detected Model URI: $MODEL_URI"
+        
+        if [[ "$MODEL_URI" == "ERROR"* ]]; then
+          echo "Gagal menemukan model. Cek log training."
           exit 1
         fi
         
         IMAGE_NAME="${{ secrets.DOCKER_USERNAME }}/loan-approval-model:latest"
         
+        echo "Building Docker image..."
         
-        MODEL_URI="file://${{ github.workspace }}/MLProject/mlruns/0/$RUN_ID/artifacts/random_forest_model"
-        
-        echo "Building Docker image from: $MODEL_URI"
-        
-        if [ ! -d "MLProject/mlruns/0/$RUN_ID/artifacts/random_forest_model" ]; then
-             echo "ERROR: Folder model tidak ditemukan di path yang diharapkan!"
-             ls -R MLProject/mlruns # Debugging: List isi folder untuk cek ID
-             exit 1
-        fi
-
         mlflow models build-docker \
           --model-uri "$MODEL_URI" \
           --name "$IMAGE_NAME" \
