@@ -1,0 +1,23 @@
+,0
+previous_loan_defaults_on_file_Yes,0.23281896900574506
+loan_int_rate,0.16704420904125442
+loan_percent_income,0.14452072552047643
+person_income,0.13492279900973433
+loan_amnt,0.05768823535987309
+credit_score,0.056740084237090496
+person_home_ownership_RENT,0.04214558578499293
+person_age,0.03132905517769504
+person_emp_exp,0.02716867769123903
+cb_person_cred_hist_length,0.024528792493462778
+loan_intent_HOMEIMPROVEMENT,0.010485593484818756
+person_home_ownership_OWN,0.010396814312582848
+loan_intent_VENTURE,0.009099813208617788
+loan_intent_EDUCATION,0.009079780573123718
+person_gender_male,0.008306384278011765
+loan_intent_MEDICAL,0.007512899681366745
+person_education_Bachelor,0.006687341064671052
+loan_intent_PERSONAL,0.006426133014018582
+person_education_High School,0.005909992091230867
+person_education_Master,0.005517411793695097
+person_education_Doctorate,0.001097548382037921
+person_home_ownership_OTHER,0.0005731547942612648
