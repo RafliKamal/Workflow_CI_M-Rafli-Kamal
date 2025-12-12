@@ -28,13 +28,14 @@ jobs:
       run: |
         pip install mlflow dagshub pandas numpy scikit-learn matplotlib seaborn
 
-    # 4. Set Environment Variables untuk DagsHub
+    # 4. Run Training & Logging to DagsHub
     - name: Run MLflow Project (Training)
       working-directory: ./MLProject
       env:
+        # Masukkan variabel autentikasi DagsHub
         MLFLOW_TRACKING_URI: "https://dagshub.com/raflikamal/SMSML_M-Rafli-Kamal.mlflow"
         MLFLOW_TRACKING_USERNAME: "raflikamal"
-        MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+        MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }} 
       run: python modelling.py
 
     # 5. Login ke Docker Hub
@@ -44,33 +45,39 @@ jobs:
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
 
-    # 6. Build & Push Docker Image (Metode Lebih Aman)
+    # 6. Build & Push Docker Image
     - name: Build and Push Docker Image
       env:
         MLFLOW_TRACKING_URI: "https://dagshub.com/raflikamal/SMSML_M-Rafli-Kamal.mlflow"
         MLFLOW_TRACKING_USERNAME: "raflikamal"
         MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
       run: |
-        # Install jq untuk parsing (jika belum ada di runner, biasanya sudah ada)
+        # Install jq untuk memproses JSON
         sudo apt-get install jq
         
-        # Ambil Run ID terbaru secara eksplisit
-        # Kita ambil run_id dari eksperimen terakhir yang sukses
-        RUN_ID=$(mlflow runs list --experiment-id 0 --max-results 1 --output json | jq -r '.[0].run_id')
+        echo "Mengambil Run ID terbaru dari DagsHub..."
+        
+        # Ambil Run ID terakhir yang statusnya FINISHED
+        # Menggunakan API MLflow agar lebih stabil daripada CLI table parsing
+        RUN_ID=$(curl -X POST -H "Authorization: Basic $(echo -n raflikamal:${{ secrets.DAGSHUB_TOKEN }} | base64)" \
+          -d '{"experiment_ids": ["0"], "max_results": 1, "order_by": ["start_time DESC"], "filter": "status = \"FINISHED\""}' \
+          https://dagshub.com/raflikamal/SMSML_M-Rafli-Kamal.mlflow/api/2.0/mlflow/runs/search \
+          | jq -r '.runs[0].info.run_id')
         
         if [ -z "$RUN_ID" ] || [ "$RUN_ID" == "null" ]; then
-          echo "Error: Tidak dapat menemukan Run ID. Pastikan training berhasil."
+          echo "Error: Tidak dapat menemukan Run ID yang valid dari DagsHub."
+          echo "Cek apakah training berhasil dan data masuk ke DagsHub."
           exit 1
         fi
         
         echo "Found Run ID: $RUN_ID"
         
-        # Build Docker Image
-        # Perhatikan format nama image: username/repo:tag
+        # Nama Image Docker
         IMAGE_NAME="${{ secrets.DOCKER_USERNAME }}/loan-approval-model:latest"
         
-        echo "Building Docker image: $IMAGE_NAME"
+        echo "Building Docker image: $IMAGE_NAME from runs:/$RUN_ID/random_forest_model"
         
+        # Build Docker Image
         mlflow models build-docker \
           --model-uri "runs:/$RUN_ID/random_forest_model" \
           --name "$IMAGE_NAME"
